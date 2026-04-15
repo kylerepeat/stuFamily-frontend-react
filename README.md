@@ -29,3 +29,29 @@ mock 模式说明：
 - `mock_token=dev-token`：写入本地登录 token，受保护页面可直接访问。
 - `mock_nickname=测试用户`：设置模拟微信昵称。
 - 页面会返回本地模拟数据，包括首页、商品、商品详情、家人列表、留言、订单和“我的”页面数据。
+
+## Docker 运行
+
+构建镜像：
+
+```bash
+docker build -t stufamily-frontend-react .
+```
+
+运行前端服务：
+
+```bash
+docker run --rm -p 3000:3000 stufamily-frontend-react
+```
+
+如果需要代理到本机后端，可指定后端地址：
+
+```bash
+docker run --rm -p 3000:3000 -e WEIXIN_PROXY_TARGET=http://host.docker.internal:8080 stufamily-frontend-react
+```
+
+容器启动后访问：
+
+```text
+http://localhost:3000
+```
