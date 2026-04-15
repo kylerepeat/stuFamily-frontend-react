@@ -1,11 +1,11 @@
-import React, { useEffect, useMemo, useState, useRef, useCallback } from 'react';
-import { Edit, X, Loader2, User, ShoppingBag, CreditCard, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { Menu, Edit2, X, Loader2, CreditCard, Package, Calendar, Hash, DollarSign } from 'lucide-react';
 import { motion, AnimatePresence } from 'motion/react';
 import {
   getWeixinAccessToken,
   getWeixinUserProfile,
-  setWeixinUserProfile,
   PurchasedProductView,
+  setWeixinUserProfile,
   weixinApi,
 } from '../api/weixin';
 
@@ -13,30 +13,19 @@ interface ProfilePageProps {
   setCurrentPage: (page: any) => void;
 }
 
-type ProductTypeFilter = 'ALL' | 'FAMILY_CARD' | 'VALUE_ADDED_SERVICE';
-
 const DEFAULT_AVATAR = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
-  '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" rx="60" fill="#FFF8E6"/><circle cx="60" cy="46" r="20" fill="#FF8C00"/><path d="M24 102c5-17 19-27 36-27s31 10 36 27" fill="#FF8C00"/></svg>',
+  '<svg xmlns="http://www.w3.org/2000/svg" width="120" height="120" viewBox="0 0 120 120"><rect width="120" height="120" rx="60" fill="#EEF2F7"/><circle cx="60" cy="46" r="20" fill="#C6CEDA"/><path d="M24 102c5-17 19-27 36-27s31 10 36 27" fill="#C6CEDA"/></svg>',
 )}`;
 
-const orderTypeMap: Record<string, string> = {
-  FAMILY_CARD: '家庭卡',
-  VALUE_ADDED_SERVICE: '增值服务',
+const orderTypeMap: Record<string, { text: string; color: string }> = {
+  FAMILY_CARD: { text: '家庭卡', color: 'bg-blue-50 text-blue-700 border-blue-200' },
+  VALUE_ADDED_SERVICE: { text: '增值服务', color: 'bg-purple-50 text-purple-700 border-purple-200' },
 };
 
-const getProductTypeIcon = (type: string) => {
-  if (type === 'FAMILY_CARD') return CreditCard;
-  return Sparkles;
-};
-
-const getProductTypeColor = (type: string) => {
-  if (type === 'FAMILY_CARD') return 'bg-emerald-50 text-emerald-600';
-  return 'bg-purple-50 text-purple-600';
-};
-
-const formatAmount = (totalPriceCents?: number) => {
-  if (typeof totalPriceCents !== 'number') return '--';
-  return `¥${(totalPriceCents / 100).toFixed(2)}`;
+const formatAmount = (item: PurchasedProductView) => {
+  const cents = typeof item.totalPriceCents === 'number' ? item.totalPriceCents : item.unitPriceCents;
+  if (typeof cents !== 'number') return '--';
+  return `¥${(cents / 100).toFixed(2)}`;
 };
 
 const formatPaidAt = (value?: string) => {
@@ -53,20 +42,20 @@ const formatPaidAt = (value?: string) => {
 
 const ProfilePage = ({ setCurrentPage: _setCurrentPage }: ProfilePageProps) => {
   const token = getWeixinAccessToken();
-  const [profile, setProfile] = useState(() => getWeixinUserProfile());
+  const profile = getWeixinUserProfile();
   const [products, setProducts] = useState<PurchasedProductView[]>([]);
   const [loadingProducts, setLoadingProducts] = useState(false);
   const [productsError, setProductsError] = useState('');
-  const [productTypeFilter, setProductTypeFilter] = useState<ProductTypeFilter>('ALL');
-  const [currentPage, setCurrentPage] = useState(1);
+  const [selectedProductType, setSelectedProductType] = useState<string>('');
+  const [pageNo, setPageNo] = useState(1);
   const [hasMore, setHasMore] = useState(true);
-  const [showEditModal, setShowEditModal] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
+  const [showEditProfile, setShowEditProfile] = useState(false);
   const [editNickname, setEditNickname] = useState('');
   const [editPhone, setEditPhone] = useState('');
-  const [savingProfile, setSavingProfile] = useState(false);
-
-  const loadMoreRef = useRef<HTMLDivElement>(null);
-  const loadingRef = useRef(false);
+  const [editLoading, setEditLoading] = useState(false);
+  const [editError, setEditError] = useState('');
+  const listContainerRef = useRef<HTMLDivElement>(null);
 
   const nickname = useMemo(() => {
     if (!token) return '未登录';
@@ -78,307 +67,399 @@ const ProfilePage = ({ setCurrentPage: _setCurrentPage }: ProfilePageProps) => {
     return profile?.avatarUrl || DEFAULT_AVATAR;
   }, [token, profile]);
 
-  const loadPurchasedProducts = useCallback(
-    async (pageNo: number, filter: ProductTypeFilter, append: boolean) => {
-      if (!token) {
-        setProducts([]);
-        setHasMore(false);
-        return;
-      }
-
-      if (loadingRef.current) return;
-      loadingRef.current = true;
-      setLoadingProducts(true);
-      setProductsError('');
-
-      try {
-        const params: { productType?: string; pageNo: number; pageSize: number } = {
-          pageNo,
-          pageSize: 20,
-        };
-        if (filter !== 'ALL') {
-          params.productType = filter;
-        }
-
-        const data = await weixinApi.getPurchasedProducts(params);
-
-        if (append) {
-          setProducts((prev) => [...prev, ...(data.items || [])]);
-        } else {
-          setProducts(data.items || []);
-        }
-        setHasMore(pageNo < data.totalPages);
-      } catch (error) {
-        if (!append) {
-          setProducts([]);
-        }
-        setProductsError('已购商品加载失败，请稍后重试');
-      } finally {
-        setLoadingProducts(false);
-        loadingRef.current = false;
-      }
-    },
-    [token],
-  );
-
-  useEffect(() => {
-    setCurrentPage(1);
-    setProducts([]);
-    setHasMore(true);
-    loadPurchasedProducts(1, productTypeFilter, false);
-  }, [productTypeFilter, loadPurchasedProducts]);
-
-  useEffect(() => {
-    const observer = new IntersectionObserver(
-      (entries) => {
-        if (entries[0].isIntersecting && hasMore && !loadingRef.current && !loadingProducts) {
-          const nextPage = currentPage + 1;
-          setCurrentPage(nextPage);
-          loadPurchasedProducts(nextPage, productTypeFilter, true);
-        }
-      },
-      { threshold: 0.1 },
-    );
-
-    if (loadMoreRef.current) {
-      observer.observe(loadMoreRef.current);
+  const loadPurchasedProducts = async (productType: string, page: number, append: boolean = false) => {
+    if (!token) {
+      setProducts([]);
+      return;
     }
 
-    return () => observer.disconnect();
-  }, [hasMore, loadingProducts, currentPage, productTypeFilter, loadPurchasedProducts]);
+    if (append) {
+      setLoadingMore(true);
+    } else {
+      setLoadingProducts(true);
+    }
+    setProductsError('');
 
-  const handleOpenEditModal = () => {
-    setEditNickname(profile?.nickname || '');
-    setEditPhone(profile?.phone || '');
-    setShowEditModal(true);
+    try {
+      const data = await weixinApi.getPurchasedProducts({
+        productType: productType || undefined,
+        pageNo: page,
+        pageSize: 20,
+      });
+
+      const items = data.items || [];
+      if (append) {
+        setProducts((prev) => [...prev, ...items]);
+      } else {
+        setProducts(items);
+      }
+
+      setHasMore(items.length >= 20);
+    } catch (error) {
+      if (!append) {
+        setProducts([]);
+        setProductsError('我购买的商品加载失败，请稍后重试');
+      }
+    } finally {
+      setLoadingProducts(false);
+      setLoadingMore(false);
+    }
   };
 
-  const handleSaveProfile = async () => {
-    if (!editNickname.trim()) {
-      window.alert('请输入昵称');
-      return;
-    }
-    if (!/^1\d{10}$/.test(editPhone)) {
-      window.alert('请输入正确的手机号（11位中国大陆手机号）');
+  useEffect(() => {
+    let cancelled = false;
+
+    const load = async () => {
+      if (!token) {
+        setProducts([]);
+        return;
+      }
+      setLoadingProducts(true);
+      setProductsError('');
+      try {
+        const data = await weixinApi.getPurchasedProducts({
+          productType: selectedProductType || undefined,
+          pageNo: 1,
+          pageSize: 20,
+        });
+        if (cancelled) return;
+        setProducts(data.items || []);
+        setHasMore((data.items || []).length >= 20);
+        setPageNo(1);
+      } catch (error) {
+        if (cancelled) return;
+        setProducts([]);
+        setProductsError('我购买的商品加载失败，请稍后重试');
+      } finally {
+        if (!cancelled) {
+          setLoadingProducts(false);
+        }
+      }
+    };
+
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, selectedProductType]);
+
+  useEffect(() => {
+    const container = listContainerRef.current;
+    if (!container) return;
+
+    const handleScroll = () => {
+      if (loadingMore || !hasMore || loadingProducts) return;
+
+      const { scrollTop, scrollHeight, clientHeight } = container;
+      if (scrollHeight - scrollTop - clientHeight < 100) {
+        setLoadingMore(true);
+        const nextPage = pageNo + 1;
+        setPageNo(nextPage);
+        loadPurchasedProducts(selectedProductType, nextPage, true);
+      }
+    };
+
+    container.addEventListener('scroll', handleScroll);
+    return () => container.removeEventListener('scroll', handleScroll);
+  }, [loadingMore, hasMore, pageNo, selectedProductType, loadingProducts]);
+
+  const handleProductTypeChange = (type: string) => {
+    setSelectedProductType(type);
+    setPageNo(1);
+    setProducts([]);
+    setHasMore(true);
+  };
+
+  const handleEditProfile = () => {
+    setEditNickname(nickname === '微信用户' ? '' : nickname);
+    setEditPhone('');
+    setEditError('');
+    setShowEditProfile(true);
+  };
+
+  const handleSubmitProfile = async () => {
+    const trimmedNickname = editNickname.trim();
+    const trimmedPhone = editPhone.trim();
+
+    if (!trimmedNickname) {
+      setEditError('昵称不能为空');
       return;
     }
 
-    setSavingProfile(true);
+    if (trimmedNickname.length > 64) {
+      setEditError('昵称最多64个字符');
+      return;
+    }
+
+    if (!/^1\d{10}$/.test(trimmedPhone)) {
+      setEditError('请输入正确的11位手机号');
+      return;
+    }
+
+    setEditLoading(true);
+    setEditError('');
+
     try {
-      const updated = await weixinApi.updateProfile({
-        nickname: editNickname.trim(),
-        phone: editPhone,
+      const result = await weixinApi.updateProfile({
+        nickname: trimmedNickname,
+        phone: trimmedPhone,
       });
-      setProfile(updated);
-      setWeixinUserProfile(updated);
-      setShowEditModal(false);
+
+      setWeixinUserProfile({
+        nickname: result.nickname,
+        avatarUrl: result.avatarUrl,
+      });
+
+      setShowEditProfile(false);
     } catch (error) {
-      window.alert('更新失败，请稍后重试');
+      setEditError('更新失败，请稍后重试');
     } finally {
-      setSavingProfile(false);
+      setEditLoading(false);
     }
   };
 
   return (
-    <main className="pt-20 pb-28 px-4 space-y-6 max-w-md mx-auto">
-      <section className="bg-[#FFCC33] p-5 rounded-2xl flex items-center justify-between text-[#453900] shadow-md">
-        <div className="flex items-center gap-4">
-          <div className="w-16 h-16 rounded-2xl overflow-hidden bg-white/30 shadow-inner flex items-center justify-center">
-            <img
-              src={avatarUrl}
-              alt="微信头像"
-              className="w-full h-full object-cover"
-              onError={(e) => {
-                const target = e.currentTarget;
-                if (target.src !== DEFAULT_AVATAR) {
-                  target.src = DEFAULT_AVATAR;
-                }
-              }}
-            />
-          </div>
-          <div className="min-w-0">
-            <div className="flex items-center gap-2 mb-1">
-              <User className="w-3.5 h-3.5 opacity-70" />
-              <span className="text-[10px] opacity-70 font-medium">我的资料</span>
+    <main className="pt-20 pb-28 px-4 max-w-md mx-auto min-h-screen bg-background">
+      <header className="fixed top-0 left-0 right-0 h-16 bg-white/90 backdrop-blur-md z-50 flex items-center justify-between px-6 border-b border-outline-variant/30">
+        <div className="flex items-center gap-3">
+          <Menu className="w-5 h-5 text-on-surface-variant" />
+          <h1 className="text-on-surface font-bold text-base">我</h1>
+        </div>
+      </header>
+
+      <section className="mt-5">
+        <div className="bg-gradient-to-br from-primary/5 via-primary/10 to-secondary/5 rounded-2xl p-5 shadow-sm border border-primary/10">
+          <div className="flex items-center gap-4">
+            <div className="relative">
+              <div className="w-16 h-16 rounded-full overflow-hidden bg-surface-container border-2 border-white shadow-lg">
+                <img
+                  src={avatarUrl}
+                  alt="微信头像"
+                  className="w-full h-full object-cover"
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (target.src !== DEFAULT_AVATAR) {
+                      target.src = DEFAULT_AVATAR;
+                    }
+                  }}
+                />
+              </div>
+              <div className="absolute -bottom-1 -right-1 w-6 h-6 bg-primary rounded-full flex items-center justify-center border-2 border-white">
+                <span className="text-white text-[8px] font-bold">V</span>
+              </div>
             </div>
-            <h4 className="text-base font-bold">{nickname}</h4>
-            {profile?.phone && (
-              <p className="text-[11px] opacity-70 mt-0.5">手机号：{profile.phone}</p>
-            )}
+            <div className="min-w-0 flex-1">
+              <p className="text-[10px] text-on-surface-variant font-medium mb-0.5">我的昵称</p>
+              <p className="text-base font-bold text-on-surface truncate">{nickname}</p>
+              <p className="text-[10px] text-primary font-medium mt-1">会员用户</p>
+            </div>
+            <button
+              onClick={handleEditProfile}
+              className="shrink-0 w-10 h-10 rounded-full bg-white/80 backdrop-blur-sm flex items-center justify-center shadow-sm border border-outline-variant/20 active:scale-90 transition-transform"
+            >
+              <Edit2 className="w-4 h-4 text-primary" />
+            </button>
           </div>
         </div>
-        {token && (
-          <button
-            onClick={handleOpenEditModal}
-            className="flex items-center gap-1.5 px-4 py-2 rounded-full bg-white/30 font-bold text-sm active:scale-95 transition-transform shadow-sm"
-          >
-            <Edit className="w-4 h-4" />
-            编辑
-          </button>
-        )}
       </section>
 
-      <section className="bg-surface-container-lowest rounded-2xl shadow-sm border border-outline-variant/20 overflow-hidden">
-        <div className="px-4 py-4 border-b border-outline-variant/10">
-          <div className="flex items-center gap-2 mb-3">
-            <ShoppingBag className="w-4 h-4 text-primary" />
-            <h3 className="text-sm font-bold text-on-surface">我购买的商品</h3>
-          </div>
-          <div className="grid grid-cols-3 gap-2">
-            {[
-              { key: 'ALL' as ProductTypeFilter, label: '全部' },
-              { key: 'FAMILY_CARD' as ProductTypeFilter, label: '家庭卡' },
-              { key: 'VALUE_ADDED_SERVICE' as ProductTypeFilter, label: '增值服务' },
-            ].map((item) => (
-              <button
-                key={item.key}
-                onClick={() => setProductTypeFilter(item.key)}
-                className={`py-2.5 rounded-xl text-xs font-bold transition-all ${
-                  productTypeFilter === item.key
-                    ? 'bg-[#FF8C00] text-white shadow-md'
-                    : 'bg-surface-container text-on-surface-variant active:bg-surface-container-high hover:bg-surface-container-low'
-                }`}
-              >
-                {item.label}
-              </button>
-            ))}
-          </div>
+      <section className="mt-6">
+        <div className="flex items-center gap-2 mb-3">
+          <div className="flex-1 h-px bg-outline-variant/20" />
+          <span className="text-xs text-on-surface-variant font-medium">商品筛选</span>
+          <div className="flex-1 h-px bg-outline-variant/20" />
+        </div>
+        <div className="flex gap-2">
+          <button
+            onClick={() => handleProductTypeChange('')}
+            className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
+              selectedProductType === ''
+                ? 'bg-primary text-white shadow-md'
+                : 'bg-surface-container-lowest text-on-surface-variant border border-outline-variant/30 hover:bg-surface-container'
+            }`}
+          >
+            全部
+          </button>
+          <button
+            onClick={() => handleProductTypeChange('FAMILY_CARD')}
+            className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
+              selectedProductType === 'FAMILY_CARD'
+                ? 'bg-primary text-white shadow-md'
+                : 'bg-surface-container-lowest text-on-surface-variant border border-outline-variant/30 hover:bg-surface-container'
+            }`}
+          >
+            家庭卡
+          </button>
+          <button
+            onClick={() => handleProductTypeChange('VALUE_ADDED_SERVICE')}
+            className={`flex-1 py-2.5 px-4 rounded-xl text-sm font-medium transition-all ${
+              selectedProductType === 'VALUE_ADDED_SERVICE'
+                ? 'bg-primary text-white shadow-md'
+                : 'bg-surface-container-lowest text-on-surface-variant border border-outline-variant/30 hover:bg-surface-container'
+            }`}
+          >
+            增值服务
+          </button>
+        </div>
+      </section>
+
+      <section className="mt-6">
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-sm font-bold text-on-surface">我购买的商品</h3>
+          {products.length > 0 && (
+            <span className="text-xs text-on-surface-variant">共 {products.length} 件</span>
+          )}
         </div>
 
-        {!loadingProducts && !!productsError && (
-          <div className="px-4 py-8 text-sm text-red-500 text-center">{productsError}</div>
-        )}
-
-        {!loadingProducts && !productsError && products.length === 0 && (
-          <div className="px-4 py-8">
-            <div className="text-center">
-              <ShoppingBag className="w-12 h-12 text-on-surface-variant/30 mx-auto mb-3" />
-              <p className="text-sm text-on-surface-variant">暂无已购商品</p>
-            </div>
-          </div>
-        )}
-
-        <div className="divide-y divide-outline-variant/10">
-          {products.map((item) => {
-            const Icon = getProductTypeIcon(item.productType || item.orderType || '');
-            const iconColor = getProductTypeColor(item.productType || item.orderType || '');
-            return (
-              <div key={item.orderNo} className="p-4">
-                <div className="flex items-start gap-4">
-                  <div className={`w-14 h-14 rounded-xl flex-shrink-0 flex items-center justify-center ${iconColor} shadow-inner`}>
-                    <Icon className="w-6 h-6" />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-start justify-between gap-3 mb-1">
-                      <h4 className="text-sm font-bold text-on-surface leading-snug line-clamp-1">
-                        {item.productTitle || '--'}
-                      </h4>
-                      <span className="text-[#FF8C00] font-bold text-lg whitespace-nowrap">
-                        {formatAmount(item.totalPriceCents)}
-                      </span>
-                    </div>
-                    <div className="flex flex-wrap gap-2 mb-2">
-                      <span className="text-[10px] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
-                        {orderTypeMap[item.productType || item.orderType] || item.productType || item.orderType || '--'}
-                      </span>
-                      <span className="text-[10px] text-on-surface-variant bg-surface-container px-2 py-0.5 rounded">
-                        x{item.quantity || 1}
-                      </span>
-                    </div>
-                    <div className="space-y-0.5">
-                      <p className="text-xs text-on-surface-variant">订单号：{item.orderNo || '--'}</p>
-                      <p className="text-xs text-on-surface-variant">商品ID：{item.productId || '--'}</p>
-                      <p className="text-xs text-on-surface-variant">支付时间：{formatPaidAt(item.paidAt)}</p>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            );
-          })}
-        </div>
-
-        <div ref={loadMoreRef} className="px-4 py-5">
+        <div ref={listContainerRef} className="space-y-3 max-h-[60vh] overflow-y-auto">
           {loadingProducts && (
-            <div className="flex items-center justify-center gap-2 text-sm text-on-surface-variant">
-              <Loader2 className="w-4 h-4 animate-spin" />
-              加载中...
+            <div className="bg-surface-container-lowest rounded-2xl p-8 text-center">
+              <Loader2 className="w-8 h-8 text-primary animate-spin mx-auto mb-2" />
+              <p className="text-sm text-on-surface-variant">正在加载...</p>
             </div>
           )}
-          {!loadingProducts && !hasMore && products.length > 0 && (
-            <div className="text-center text-xs text-on-surface-variant/60">—— 没有更多了 ——</div>
+          {!!productsError && !loadingProducts && (
+            <div className="bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
+              <p className="text-sm text-red-600">{productsError}</p>
+            </div>
+          )}
+          {!loadingProducts && !productsError && products.length === 0 && (
+            <div className="bg-surface-container-lowest rounded-2xl p-8 text-center border border-outline-variant/20">
+              <Package className="w-12 h-12 text-on-surface-variant/30 mx-auto mb-2" />
+              <p className="text-sm text-on-surface-variant">暂无已购商品</p>
+            </div>
+          )}
+
+          {!loadingProducts && !productsError && products.length > 0 && (
+            <>
+              {products.map((item, index) => {
+                const typeConfig = orderTypeMap[item.orderType] || { text: item.orderType || '--', color: 'bg-gray-50 text-gray-700 border-gray-200' };
+                return (
+                  <motion.div
+                    key={item.orderNo}
+                    initial={{ opacity: 0, y: 10 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: index * 0.05 }}
+                    className="bg-surface-container-lowest rounded-2xl p-4 border border-outline-variant/20 shadow-sm"
+                  >
+                    <div className="flex items-start justify-between gap-3 mb-3">
+                      <div className="flex-1 min-w-0">
+                        <h4 className="text-sm font-bold text-on-surface truncate mb-1">{item.productTitle || '--'}</h4>
+                        <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold border ${typeConfig.color}`}>
+                          {typeConfig.text}
+                        </span>
+                      </div>
+                      <div className="text-right shrink-0">
+                        <p className="text-lg font-bold text-primary">{formatAmount(item)}</p>
+                        <p className="text-[10px] text-on-surface-variant">x{item.quantity || 1}</p>
+                      </div>
+                    </div>
+
+                    <div className="grid grid-cols-2 gap-2 pt-3 border-t border-outline-variant/10">
+                      <div className="flex items-center gap-1.5">
+                        <Hash className="w-3.5 h-3.5 text-on-surface-variant/60" />
+                        <span className="text-[10px] text-on-surface-variant">订单号</span>
+                      </div>
+                      <p className="text-xs text-on-surface truncate text-right">{item.orderNo || '--'}</p>
+
+                      <div className="flex items-center gap-1.5">
+                        <Calendar className="w-3.5 h-3.5 text-on-surface-variant/60" />
+                        <span className="text-[10px] text-on-surface-variant">支付时间</span>
+                      </div>
+                      <p className="text-xs text-on-surface text-right">{formatPaidAt(item.paidAt)}</p>
+                    </div>
+                  </motion.div>
+                );
+              })}
+              {loadingMore && (
+                <div className="bg-surface-container-lowest rounded-2xl p-4 text-center border border-outline-variant/20">
+                  <div className="flex items-center justify-center gap-2">
+                    <Loader2 className="w-4 h-4 text-primary animate-spin" />
+                    <span className="text-sm text-on-surface-variant">加载中...</span>
+                  </div>
+                </div>
+              )}
+              {!loadingMore && !hasMore && products.length > 0 && (
+                <div className="text-center py-3">
+                  <span className="text-xs text-on-surface-variant">— 没有更多了 —</span>
+                </div>
+              )}
+            </>
           )}
         </div>
       </section>
 
       <AnimatePresence>
-        {showEditModal && (
-          <>
+        {showEditProfile && (
+          <motion.div
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4"
+            onClick={() => setShowEditProfile(false)}
+          >
             <motion.div
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              onClick={() => setShowEditModal(false)}
-              className="fixed inset-0 bg-black/40 z-50"
-            />
-            <motion.div
-              initial={{ opacity: 0, y: 50, scale: 0.95 }}
-              animate={{ opacity: 1, y: 0, scale: 1 }}
-              exit={{ opacity: 0, y: 50, scale: 0.95 }}
-              transition={{ type: 'spring', damping: 25, stiffness: 300 }}
-              className="fixed inset-x-4 top-1/2 -translate-y-1/2 max-w-md mx-auto bg-white rounded-2xl shadow-2xl z-50 overflow-hidden"
+              initial={{ opacity: 0, scale: 0.9, y: 20 }}
+              animate={{ opacity: 1, scale: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.9, y: 20 }}
+              transition={{ type: 'spring', duration: 0.3 }}
+              onClick={(e) => e.stopPropagation()}
+              className="w-full max-w-sm bg-white rounded-3xl overflow-hidden shadow-2xl"
             >
-              <div className="bg-[#FFCC33] px-5 py-4 flex items-center justify-between">
-                <h3 className="text-base font-bold text-[#453900]">修改资料</h3>
-                <button
-                  onClick={() => setShowEditModal(false)}
-                  className="p-1.5 rounded-full bg-white/30 hover:bg-white/50 transition-colors"
-                >
-                  <X className="w-5 h-5 text-[#453900]" />
-                </button>
+              <div className="bg-gradient-to-r from-primary/10 to-secondary/10 p-6 pb-4">
+                <div className="flex items-center justify-between">
+                  <h2 className="text-lg font-bold text-on-surface">修改资料</h2>
+                  <button
+                    onClick={() => setShowEditProfile(false)}
+                    className="w-8 h-8 rounded-full bg-white/80 flex items-center justify-center hover:bg-white transition-colors"
+                  >
+                    <X className="w-4 h-4 text-on-surface-variant" />
+                  </button>
+                </div>
               </div>
-              <div className="p-5 space-y-4">
+
+              <div className="p-6 pt-4 space-y-4">
                 <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1.5">昵称</label>
+                  <label className="block text-xs text-on-surface-variant font-medium mb-2">昵称</label>
                   <input
                     type="text"
                     value={editNickname}
                     onChange={(e) => setEditNickname(e.target.value)}
                     placeholder="请输入昵称"
                     maxLength={64}
-                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl py-3.5 px-4 text-on-surface placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-[#FF8C00]/30 focus:outline-none transition-all"
+                    className="w-full bg-surface-container border-2 border-transparent rounded-xl py-3 px-4 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary/30 focus:outline-none transition-colors"
                   />
                 </div>
+
                 <div>
-                  <label className="block text-xs font-bold text-on-surface-variant mb-1.5">手机号</label>
+                  <label className="block text-xs text-on-surface-variant font-medium mb-2">手机号</label>
                   <input
                     type="tel"
                     value={editPhone}
                     onChange={(e) => setEditPhone(e.target.value)}
                     placeholder="请输入11位手机号"
                     maxLength={11}
-                    className="w-full bg-surface-container-low border border-outline-variant/30 rounded-xl py-3.5 px-4 text-on-surface placeholder:text-on-surface-variant/50 focus:ring-2 focus:ring-[#FF8C00]/30 focus:outline-none transition-all"
+                    className="w-full bg-surface-container border-2 border-transparent rounded-xl py-3 px-4 text-sm text-on-surface placeholder:text-on-surface-variant/50 focus:border-primary/30 focus:outline-none transition-colors"
                   />
                 </div>
-              </div>
-              <div className="px-5 py-4 border-t border-outline-variant/10 flex gap-3">
+
+                {!!editError && (
+                  <div className="bg-red-50 border border-red-200 rounded-lg p-3">
+                    <p className="text-xs text-red-600">{editError}</p>
+                  </div>
+                )}
+
                 <button
-                  onClick={() => setShowEditModal(false)}
-                  disabled={savingProfile}
-                  className="flex-1 py-3.5 rounded-xl bg-surface-container text-on-surface font-bold text-sm active:bg-surface-container-high transition-colors disabled:opacity-50"
+                  onClick={handleSubmitProfile}
+                  disabled={editLoading}
+                  className="w-full py-3.5 bg-gradient-to-r from-primary to-primary/80 text-white rounded-xl font-bold disabled:opacity-50 disabled:cursor-not-allowed active:scale-[0.98] transition-all shadow-lg shadow-primary/30 flex items-center justify-center gap-2"
                 >
-                  取消
-                </button>
-                <button
-                  onClick={handleSaveProfile}
-                  disabled={savingProfile}
-                  className="flex-1 py-3.5 rounded-xl bg-[#FF8C00] text-white font-bold text-sm active:bg-[#E67E00] transition-colors disabled:opacity-50 flex items-center justify-center gap-2 shadow-md"
-                >
-                  {savingProfile && <Loader2 className="w-4 h-4 animate-spin" />}
-                  {savingProfile ? '提交中...' : '提交'}
+                  {editLoading && <Loader2 className="w-4 h-4 animate-spin" />}
+                  {editLoading ? '提交中...' : '提交修改'}
                 </button>
               </div>
             </motion.div>
-          </>
+          </motion.div>
         )}
       </AnimatePresence>
     </main>

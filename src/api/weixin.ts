@@ -6,15 +6,20 @@ export interface ApiResponse<T> {
 }
 
 export interface WeixinUserProfile {
-  userId?: number;
   nickname: string;
   avatarUrl: string;
-  phone?: string;
 }
 
-export interface UpdateWeixinProfileRequest {
+export interface UpdateProfileRequest {
   nickname: string;
   phone: string;
+}
+
+export interface WechatUserProfileView {
+  userId: number;
+  nickname: string;
+  phone: string;
+  avatarUrl: string;
 }
 
 export interface WechatLoginRequest {
@@ -684,6 +689,28 @@ export const weixinApi = {
     }, null);
   },
 
+  updateProfile(payload: UpdateProfileRequest, token?: string) {
+    if (isWeixinMockEnabled(token)) {
+      const profile = getMockProfile();
+      const existingProfile = getWeixinUserProfile();
+      const updatedProfile: WeixinUserProfile = {
+        nickname: payload.nickname,
+        avatarUrl: existingProfile?.avatarUrl || profile.avatarUrl,
+      };
+      setWeixinUserProfile(updatedProfile);
+      return Promise.resolve<WechatUserProfileView>({
+        userId: 1,
+        nickname: payload.nickname,
+        phone: payload.phone,
+        avatarUrl: updatedProfile.avatarUrl,
+      });
+    }
+    return request<WechatUserProfileView>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }, token);
+  },
+
   async getHomeIndex(options?: { forceRefresh?: boolean }) {
     if (isWeixinMockEnabled(null)) {
       return mockHomeIndex();
@@ -880,7 +907,7 @@ export const weixinApi = {
       const pageSize = params.pageSize || 20;
       let products = getMockPurchasedProducts();
       if (params.productType) {
-        products = products.filter((p) => p.productType === params.productType);
+        products = products.filter((item) => item.productType === params.productType);
       }
       return Promise.resolve(mockPageResult(products, pageNo, pageSize));
     }
@@ -914,23 +941,6 @@ export const weixinApi = {
     });
     PURCHASED_PRODUCTS_INFLIGHT.set(key, task);
     return task;
-  },
-
-  updateProfile(payload: UpdateWeixinProfileRequest, token?: string) {
-    if (isWeixinMockEnabled(token)) {
-      const profile = getMockProfile();
-      const updated = {
-        ...profile,
-        nickname: payload.nickname,
-        phone: payload.phone,
-      };
-      setWeixinUserProfile(updated);
-      return Promise.resolve(updated);
-    }
-    return request<WeixinUserProfile>('/auth/profile', {
-      method: 'PUT',
-      body: JSON.stringify(payload),
-    }, token);
   },
 
   notifyPay(payload: PayNotifyRequest) {
