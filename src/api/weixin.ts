@@ -6,8 +6,15 @@ export interface ApiResponse<T> {
 }
 
 export interface WeixinUserProfile {
+  userId?: number;
   nickname: string;
   avatarUrl: string;
+  phone?: string;
+}
+
+export interface UpdateWeixinProfileRequest {
+  nickname: string;
+  phone: string;
 }
 
 export interface WechatLoginRequest {
@@ -865,20 +872,25 @@ export const weixinApi = {
   },
 
   getPurchasedProducts(
-    params: { pageNo?: number; pageSize?: number } = {},
+    params: { productType?: string; pageNo?: number; pageSize?: number } = {},
     token?: string,
   ) {
     if (isWeixinMockEnabled(token)) {
       const pageNo = params.pageNo || 1;
       const pageSize = params.pageSize || 20;
-      return Promise.resolve(mockPageResult(getMockPurchasedProducts(), pageNo, pageSize));
+      let products = getMockPurchasedProducts();
+      if (params.productType) {
+        products = products.filter((p) => p.productType === params.productType);
+      }
+      return Promise.resolve(mockPageResult(products, pageNo, pageSize));
     }
     const query = new URLSearchParams();
+    if (params.productType) query.set('product_type', params.productType);
     if (params.pageNo) query.set('page_no', String(params.pageNo));
     if (params.pageSize) query.set('page_size', String(params.pageSize));
     const queryString = query.toString();
     const tokenValue = token || getWeixinAccessToken() || '';
-    const key = `${tokenValue}|${params.pageNo || 1}|${params.pageSize || 20}`;
+    const key = `${tokenValue}|${params.productType || ''}|${params.pageNo || 1}|${params.pageSize || 20}`;
     const cached = PURCHASED_PRODUCTS_CACHE.get(key);
     if (cached && cached.expiresAt > Date.now()) {
       return Promise.resolve(cached.data);
@@ -902,6 +914,23 @@ export const weixinApi = {
     });
     PURCHASED_PRODUCTS_INFLIGHT.set(key, task);
     return task;
+  },
+
+  updateProfile(payload: UpdateWeixinProfileRequest, token?: string) {
+    if (isWeixinMockEnabled(token)) {
+      const profile = getMockProfile();
+      const updated = {
+        ...profile,
+        nickname: payload.nickname,
+        phone: payload.phone,
+      };
+      setWeixinUserProfile(updated);
+      return Promise.resolve(updated);
+    }
+    return request<WeixinUserProfile>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }, token);
   },
 
   notifyPay(payload: PayNotifyRequest) {
