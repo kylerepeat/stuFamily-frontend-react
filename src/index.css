@@ -1,0 +1,41 @@
+@import "tailwindcss";
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;700&display=swap');
+
+@theme {
+  --font-serif: "Noto Serif SC", serif;
+  
+  --color-primary: #8c4a00;
+  --color-primary-dim: #7b4000;
+  --color-primary-container: #fd8b00;
+  --color-on-primary-container: #442100;
+  
+  --color-background: #f6f6f6;
+  --color-on-background: #2d2f2f;
+  
+  --color-surface: #f6f6f6;
+  --color-on-surface: #2d2f2f;
+  --color-on-surface-variant: #5a5c5c;
+  
+  --color-surface-container: #e7e8e8;
+  --color-surface-container-low: #f0f1f1;
+  --color-surface-container-high: #e1e3e3;
+  --color-surface-container-highest: #dbdddd;
+  --color-surface-container-lowest: #ffffff;
+  
+  --color-secondary-container: #ffd709;
+  --color-tertiary-container: #bffee6;
+  --color-on-tertiary-container: #276452;
+  
+  --color-outline-variant: #acadad;
+}
+
+@layer base {
+  body {
+    @apply bg-background text-on-surface font-serif;
+    -webkit-tap-highlight-color: transparent;
+  }
+}
+
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}

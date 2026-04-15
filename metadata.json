@@ -1,0 +1,7 @@
+{
+  "name": "学子之家 - 家政服务",
+  "description": "专业的家政服务平台，提供家庭保洁、家长沟通及家庭管理服务。",
+  "requestFramePermissions": [
+    "geolocation"
+  ]
+}

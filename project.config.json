@@ -1,0 +1,20 @@
+{
+  "description": "stuFamily wechat mini program",
+  "packOptions": {
+    "ignore": []
+  },
+  "setting": {
+    "urlCheck": false,
+    "es6": true,
+    "enhance": true,
+    "postcss": true,
+    "minified": true,
+    "newFeature": true
+  },
+  "compileType": "miniprogram",
+  "appid": "touristappid",
+  "projectname": "stuFamily-mini",
+  "miniprogramRoot": "miniprogram/",
+  "condition": {}
+}
+
