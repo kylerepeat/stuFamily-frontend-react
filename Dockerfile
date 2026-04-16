@@ -1,27 +1,29 @@
-FROM node:22-alpine AS deps
+# escape=`
+FROM node:22-windowsservercore-ltsc2022 AS deps
 
-WORKDIR /app
+WORKDIR C:\app
 
 COPY package*.json ./
 RUN npm ci
 
 FROM deps AS build
 
-WORKDIR /app
+WORKDIR C:\app
 
 COPY . .
 RUN npm run build
 
-FROM node:22-alpine AS runner
+FROM node:22-windowsservercore-ltsc2022 AS runner
 
-WORKDIR /app
+WORKDIR C:\app
 
 ENV NODE_ENV=production
+ENV APP_ENV=test
 ENV WEIXIN_PROXY_TARGET=http://host.docker.internal:8080
 
 COPY package*.json ./
-COPY --from=deps /app/node_modules ./node_modules
-COPY --from=build /app/dist ./dist
+COPY --from=deps C:/app/node_modules ./node_modules
+COPY --from=build C:/app/dist ./dist
 COPY server.ts ./
 COPY tsconfig.json ./
 COPY vite.config.ts ./
