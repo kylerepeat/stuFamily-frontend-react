@@ -10,6 +10,18 @@ export interface WeixinUserProfile {
   avatarUrl: string;
 }
 
+export interface UpdateProfileRequest {
+  nickname: string;
+  phone: string;
+}
+
+export interface WechatUserProfileView {
+  userId: number;
+  nickname: string;
+  phone: string;
+  avatarUrl: string;
+}
+
 export interface WechatLoginRequest {
   code: string;
   nickname?: string;
@@ -677,6 +689,28 @@ export const weixinApi = {
     }, null);
   },
 
+  updateProfile(payload: UpdateProfileRequest, token?: string) {
+    if (isWeixinMockEnabled(token)) {
+      const profile = getMockProfile();
+      const existingProfile = getWeixinUserProfile();
+      const updatedProfile: WeixinUserProfile = {
+        nickname: payload.nickname,
+        avatarUrl: existingProfile?.avatarUrl || profile.avatarUrl,
+      };
+      setWeixinUserProfile(updatedProfile);
+      return Promise.resolve<WechatUserProfileView>({
+        userId: 1,
+        nickname: payload.nickname,
+        phone: payload.phone,
+        avatarUrl: updatedProfile.avatarUrl,
+      });
+    }
+    return request<WechatUserProfileView>('/auth/profile', {
+      method: 'PUT',
+      body: JSON.stringify(payload),
+    }, token);
+  },
+
   async getHomeIndex(options?: { forceRefresh?: boolean }) {
     if (isWeixinMockEnabled(null)) {
       return mockHomeIndex();
@@ -865,20 +899,25 @@ export const weixinApi = {
   },
 
   getPurchasedProducts(
-    params: { pageNo?: number; pageSize?: number } = {},
+    params: { productType?: string; pageNo?: number; pageSize?: number } = {},
     token?: string,
   ) {
     if (isWeixinMockEnabled(token)) {
       const pageNo = params.pageNo || 1;
       const pageSize = params.pageSize || 20;
-      return Promise.resolve(mockPageResult(getMockPurchasedProducts(), pageNo, pageSize));
+      let products = getMockPurchasedProducts();
+      if (params.productType) {
+        products = products.filter((item) => item.productType === params.productType);
+      }
+      return Promise.resolve(mockPageResult(products, pageNo, pageSize));
     }
     const query = new URLSearchParams();
+    if (params.productType) query.set('product_type', params.productType);
     if (params.pageNo) query.set('page_no', String(params.pageNo));
     if (params.pageSize) query.set('page_size', String(params.pageSize));
     const queryString = query.toString();
     const tokenValue = token || getWeixinAccessToken() || '';
-    const key = `${tokenValue}|${params.pageNo || 1}|${params.pageSize || 20}`;
+    const key = `${tokenValue}|${params.productType || ''}|${params.pageNo || 1}|${params.pageSize || 20}`;
     const cached = PURCHASED_PRODUCTS_CACHE.get(key);
     if (cached && cached.expiresAt > Date.now()) {
       return Promise.resolve(cached.data);
